@@ -1,14 +1,15 @@
 #!/usr/bin/python
 #
-# Deletes all messages that were archived with a 200 status in the passed-in 
+# Deletes all messages that were archived with a 200 status in the passed-in
 # sqlite database
 #
-# Script takes two arguments: [SOURCE DATABASE FILE] [SPROXYD HOST]
+# Script takes two arguments: [method] [SOURCE DATABASE FILE] [SPROXYD HOST]
 
 import sys
 import sqlite3
 import urllib2
 import time
+import datetime
 
 ##
 # Configuration
@@ -21,40 +22,55 @@ SPROXY_DRIVER="chord"
 
 ##
 # Args
-DB_FILE=sys.argv[1]
+METHOD=sys.argv[1] # one of file or db
+DB_FILE=sys.argv[2]
 
 try:
-    SPROXYD_HOST=sys.argv[2]
+    SPROXYD_HOST=sys.argv[3]
 except:
     print("no sproxyd host specified, using {0}".format(SPROXY_HOST))
 
 SPROXY_ENDPOINT="http://{0}:{1}/{2}/{3}".format(SPROXYD_HOST, SPROXY_PORT, SPROXY_PATH, SPROXY_DRIVER)
-##
-# Open everything
-dbconn = sqlite3.connect(DB_FILE)
-cur = dbconn.cursor()
+
+def timef():
+    return (float(datetime.datetime.now().microsecond)/1000000) + time.time()
 
 ##
 # happy output
 errs=0
 tic=0
 count=0
-skip=100
+skip=1000
 timer=0
 msg_sec=0
 lst_cnt=0
-nownow = int(time.time())
+nownow = timef()
 start_t = nownow
 
-cur.execute('''SELECT http_status, locator FROM mail WHERE http_status=200''')
+
+if METHOD=="db":
+    dbconn = sqlite3.connect(DB_FILE)
+    cur = dbconn.cursor()
+    cur.execute('''SELECT http_status, locator FROM mail WHERE http_status=200''')
+elif METHOD=="file":
+    srcfh = open(DB_FILE, "r")
+else:
+    sys.stderr.write("bad method.\n")
+    sys.exit(1)
+
 while True:
     count += 1
     tic += 1
-    
-    try:
-        code, key = cur.fetchone()
-    except: break
-    
+
+    if METHOD == "db":
+        try:
+            code, key = cur.fetchone()
+        except: break
+    elif METHOD == "file":
+        key = srcfh.readline().strip()
+
+    if not key: break
+
     try:
         opener = urllib2.build_opener(urllib2.HTTPHandler)
         request = urllib2.Request("{0}/{1}".format(SPROXY_ENDPOINT, key))
@@ -63,16 +79,19 @@ while True:
     except Exception as e:
         print(e)
         errs+=1
-        
+
     if tic == skip:
         timer = nownow
-        nownow = int(time.time())
+        nownow = timef()
         msg_sec = float((count - lst_cnt))/(nownow - timer)
         tic = 0
         lst_cnt = count
         print("{0} messages deleted, {1} errors logged, {2:.2f} messages/s".format(count, errs, msg_sec))
-        
-print("{0} messages deleted, {1} errors logged, in {2} seconds".format(
-        count, errs, (int(time.time())-start_t)))
 
-        
+
+print("{0} messages deleted, {1} errors logged, in {2} seconds".format(
+        count, errs, (timef()-start_t)))
+
+if METHOD == "file": srcfh.close()
+elif METHOD == "db": dbconn.close()
+
