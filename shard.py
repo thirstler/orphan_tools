@@ -7,33 +7,30 @@
 import os
 import sys
 import argparse
+import resource
 
 ##
 # Configuration
 
-# To speed things up this will open flies in blocks and work with them rather
+# To speed things up this will open files in blocks and work with them rather
 # than opening and closing files repeately
-MAX_HANDLES=65536
-
-# Keylist to memory: Read the whole keylist into memory and sort there. Not
-# possible for very large keylist (unlimplimented)
-MEM_KEYLIST=0
-
+MAX_HANDLES=resource.RLIMIT_NOFILE
 
 fh_arr = {}
-shard_root='rand_shards'
-shard_file='ring_keys.txt'
+shard_root='shards'
 monres = 10000
 count = 0
 tic = 0
 
-def prepare_fh(depth, append):
+def prepare_fh(depth, append, shard_file):
     fh_blocks = 1
     shard_file_count = 2**(depth*4)
     flag = 'w'
 
     if shard_file_count > MAX_HANDLES:
-        print("uh, no")
+        print(
+          "Can't open that many files ({0}), reduce the depth or set your nofilen"+
+          "limit to >{0}".format(str(shard_file_count))
         sys.exit(1)
 
     for n in range(0, shard_file_count):
@@ -74,12 +71,13 @@ def clean_fh():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Divide large keylist along some logic to divide operations on those keys')
     parser.add_argument('--depth', '-d', help='shard depth in nibbles (max 4, default 2)', default=2)
-    parser.add_argument('--source', '-s',  help='source file for RING input keys')
+    parser.add_argument('--source', '-s',  help='source file for RING input keys', required=True)
+    parser.add_argument('--output', '-o',  help='name of output file', default="shardlist.txt", required=True)
     parser.add_argument('--mode', '-m',  help='"random" sharding or "ordered" (default: ordered', default='orderd')
     parser.add_argument('--append', '-a',  help='append keys in sharded lists (default: false)', default='false')
     args = parser.parse_args()
 
-    prepare_fh(int(args.depth), args.append)
+    prepare_fh(int(args.depth), args.append, args.output)
     sortus(args.source, args.mode, int(args.depth))
     clean_fh()
 
